@@ -373,6 +373,12 @@ func resourceDigitalOceanKubernetesClusterDelete(d *schema.ResourceData, meta in
 		return fmt.Errorf("Unable to delete cluster: %s", err)
 	}
 
+	// wait for completion
+	err = waitForKubernetesClusterDelete(client, d.Id())
+	if err != nil {
+		return fmt.Errorf("Error deleting Kubernetes cluster: %s", err)
+	}
+
 	d.SetId("")
 
 	return nil
@@ -500,6 +506,34 @@ func waitForKubernetesClusterCreate(client *godo.Client, id string) (*godo.Kuber
 	}
 
 	return nil, fmt.Errorf("Timeout waiting to create cluster")
+}
+
+func waitForKubernetesClusterDelete(client *godo.Client, id string) error {
+	ticker := time.NewTicker(10 * time.Second)
+	timeout := 120
+	n := 0
+
+	for range ticker.C {
+		_, resp, err := client.Kubernetes.Get(context.Background(), id)
+		if resp.StatusCode == 404 {
+			ticker.Stop()
+			return nil
+		}
+
+		if err != nil {
+			ticker.Stop()
+			return fmt.Errorf("Error trying to read cluster state: %s", err)
+		}
+
+		if n > timeout {
+			ticker.Stop()
+			break
+		}
+
+		n++
+	}
+
+	return fmt.Errorf("Timeout waiting to delete cluster")
 }
 
 type kubernetesConfig struct {
